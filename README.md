@@ -6,4 +6,3 @@ Students:
 Karim Boudarraja 
 Giuseppe Di Paola
 Elena Nuttini
-g
