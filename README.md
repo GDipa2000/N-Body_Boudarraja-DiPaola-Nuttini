@@ -6,18 +6,7 @@ This program implements two solvers for the N-Body Problem simulation for elasti
 
 The simulation can run in 2D or 3D for the standard solver, and in 2D only for Barnes-Hut, using the same executable and command-line flags; the visualizer displays the result accordingly. Each solver is available both in a serial and an OpenMP-parallel version, for four simulation modes in total.
 
-## Prerequisites
 
-**To build and run the simulation:**
-- A C++17 compiler with OpenMP support (`g++` is assumed throughout this README)
-- CMake ≥ 3.10, only if you use the "computational part only" workflow described below
-
-**To run the visual simulation (`animation.py`):**
-- Python 3
-- `matplotlib` (with a working Tk backend — `animation.py` explicitly selects `TkAgg`, so a headless machine without a display will not be able to show the animation window)
-- `numpy`
-
-Nothing needs to be installed manually for the C++ side beyond a working `g++`/OpenMP toolchain: both workflows below compile the project themselves.
 
 ## How to run the visual simulation
 
@@ -120,13 +109,4 @@ Three points deserve special mention for how they interact with the rest of the 
 - **`-chunk`** only affects `-simT 1` (parallel brute force): it controls the chunk size of the `schedule(dynamic, chunkSize)` loop that computes pairwise forces, which is scheduled dynamically because later particles have progressively less work than earlier ones (each particle `i` only computes forces against particles `j > i`). To evaluate its effect, keep every other parameter and `OMP_NUM_THREADS` fixed, and try a few values such as `1`, `4`, `16`, and `64`.
 - **`-simT`'s thread count is not controlled directly by this flag.** For any mode other than serial (`-simT 1`, `2`, or `3`), the program automatically requests `min(numP, available hardware threads)` OpenMP threads — so asking for more threads than particles has no effect, and there is no flag to force a *smaller* team than the hardware allows other than setting `OMP_NUM_THREADS` in the environment *before* launching the program (`OMP_NUM_THREADS=2 ../../build/nbody -simT 1 ...`), which the program's automatic thread count still respects as its own upper bound.
 
-## Environment variables
 
-- **`NBODY_NO_IO`** — set to any value to skip writing `Info.txt` and every `Coordinates_i.txt` file. Useful for measuring the simulation's own execution time in isolation from disk I/O; leave it unset when you need the output files, including every time you intend to run `animation.py` afterwards.
-
-## Documentation
-
-You can find a detailed report about the reasoning behind the algorithms, as well as a reference manual with all the code implemented for this project generated using Doxygen.
-
-The detailed report about the algorithms is available in
-[`N-Body_Project_Report.pdf`](N-Body_Project_Report.pdf).
