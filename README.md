@@ -1,5 +1,3 @@
-
-Elena Nuttini
 # NBody-Boudarraja-DiPaola-Nuttini
 Implementation of "N-Body Problem" for AMSC course.
 
