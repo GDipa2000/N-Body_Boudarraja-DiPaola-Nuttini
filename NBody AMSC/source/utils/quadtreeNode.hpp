@@ -25,10 +25,7 @@ class Particle;
  * @tparam Dimension Number of coordinates stored by each particle. The current
  * implementation uses the first two coordinates to build four quadrants.
  *
- * @warning Non-owning: ogni particella referenziata dall'albero (particle,
- * additionalParticles) e' un puntatore dentro il vector originale del
- * chiamante, non una copia. Il vector sorgente deve restare valido e non
- * essere ridimensionato per tutta la vita dell'albero.
+ 
  */
 template <size_t Dimension>
 class QuadtreeNode {
@@ -335,12 +332,7 @@ class QuadtreeNode {
    private:
     double width;
     bool leaf;
-    // @change: non piu' shared_ptr. Il nodo non possiede mai le particelle,
-    // punta sempre dentro il vector originale passato dal chiamante (vedi
-    // treeUtilities.hpp / main.cpp). Nessuna allocazione, nessun reference
-    // counting - ma il vector sorgente DEVE restare valido e di dimensione
-    // fissa per tutta la vita dell'albero (nessun push_back/resize mentre
-    // l'albero esiste).
+    
     const Particle<Dimension>* particle = nullptr;
     std::vector<const Particle<Dimension>*> additionalParticles;
     std::array<std::unique_ptr<QuadtreeNode<Dimension>>, 4> children;
