@@ -103,9 +103,7 @@ std::unique_ptr<QuadtreeNode<Dimension>> mergeRoots(std::array<std::unique_ptr<Q
     //il sottoalbero contiene un solo corpo, quindi lo inserisco nel quadtree come un normale corpo,
     //altrimenti il sottoalbero contiene più corpi, quindi il nodo intermedio deve essere inserito come nodo interno
     for (int j = 0; j < 4; j++) {
-        // @fix (era il TODO "CONTROLLA"): un quadrante senza particelle e'
-        // rappresentato da un puntatore nullo (vedi createQuadTreeParallel,
-        // che ritorna nullptr se nessuna particella cade in quella regione).
+        /
         // Va saltato prima di qualunque dereference, altrimenti crash.
         if (!(*roots)[j]) {
             continue;
@@ -153,14 +151,7 @@ std::unique_ptr<QuadtreeNode<Dimension>> mergeSubtreesRecursive(
         for (int j = 0; j < 4; ++j) {
             group[j] = std::move(roots[start + j]);
         }
-        // @fix: 2^levelsRemaining, non (levelsRemaining+1) - la larghezza di
-        // un nodo raddoppia ad ogni livello di fusione (crescita esponenziale),
-        // non cresce linearmente. La vecchia formula iterativa dava il
-        // risultato corretto solo ai primi due livelli per coincidenza
-        // numerica (l+1 == 2^l solo per l=0,1), sbagliando dal terzo livello
-        // in poi (num_quad >= 64, cioe' oltre 16 thread arrotondati alla
-        // potenza di 4 superiore). std::ldexp(x, n) calcola x * 2^n in modo
-        // esatto e piu' efficiente di std::pow(2, n).
+        /
         return mergeRoots(&group, std::ldexp(baseRegionWidth, levelsRemaining));
     }
 
@@ -220,13 +211,7 @@ std::unique_ptr<QuadtreeNode<Dimension>> generateTreeParallel(std::vector<Partic
 
     treeRoot = merging(&roots, subRegionsDimension[0], num_threads);
 
-    // @removed: "omp_set_num_threads(num_threads);" - serviva a ripristinare
-    // lo stato globale di OpenMP perche' la vecchia merging() lo mutava
-    // internamente (omp_set_num_threads) quando riduceva il team ai livelli
-    // piu' alti. La nuova merging() usa solo la clausola locale
-    // "num_threads(...)" sulla propria regione parallela, che non tocca mai
-    // lo stato globale di default - il ripristino non serve piu'.
-
+   
     return treeRoot;
 }
 
@@ -317,11 +302,7 @@ template <size_t Dimension>
 void calculateNetForceQuadtree(const std::unique_ptr<QuadtreeNode<Dimension>>& node,
                                Particle<Dimension>* p, double theta, Force<Dimension>& f,
                                double dimSimulationArea, double softening) {
-    // @change: p non e' piu' una copia allocata su heap, ma un puntatore
-    // diretto alla particella reale nel vector della simulazione (vedi i
-    // call site in serialBarnesHut/parallelBarnesHut). p->addForce(...) qui
-    // sotto scrive quindi DIRETTAMENTE sulla particella reale: non serve
-    // nessun passaggio di "trasferimento" dopo la chiamata a questa funzione.
+    
     /*
         QUESTA FUNZIONE VA UTILIZZATA SOLO AD ALBERO CALCOLATO
     */
@@ -371,7 +352,6 @@ void calculateNetForceQuadtree(const std::unique_ptr<QuadtreeNode<Dimension>>& n
     }
 }
 
-// [COLLISION-SYNC] Detect pairs in parallel without mutating shared particles.
 template <size_t Dimension>
 void resolveCollisions(std::vector<Particle<Dimension>>& particles, double softening) {
     if (particles.size() < 2) {
@@ -451,7 +431,6 @@ void resolveCollisions(std::vector<Particle<Dimension>>& particles, double softe
     }
 }
 
-// [COLLISION-SYNC] Boundary collisions are independent because each iteration owns one particle.
 template <size_t Dimension>
 void resolveBoundaryCollisions(std::vector<Particle<Dimension>>& particles, double boundary) {
     #pragma omp parallel for schedule(static)
@@ -494,7 +473,6 @@ void serialBarnesHut(int iterationNumber, std::vector<Particle<Dimension>>* part
     }
 
     for (int iter = 0; iter < iterationNumber; ++iter) {
-        // [COLLISION-SYNC] Apply collisions before building the read-only tree.
         resolveBoundaryCollisions(*particles, dimSimulationArea);
         resolveCollisions(*particles, softening);
         //Vengono passati come parametri in create quadtree il puntatore di particles
@@ -505,13 +483,7 @@ void serialBarnesHut(int iterationNumber, std::vector<Particle<Dimension>>* part
         quadtree = createQuadTree(*particles, 2 * dimSimulationArea);
 
         for (std::size_t i = 0; i < numParticles; ++i) {
-            // @change: niente piu' copia. p punta DIRETTAMENTE a (*particles)[i]:
-            // calculateNetForceQuadtree scrive la forza netta gia' dentro
-            // (*particles)[i] tramite p->addForce(...). Le due righe di
-            // "trasferimento" che c'erano prima (addForce/setVel) sono state
-            // rimosse: con la copia servivano per riportare il risultato
-            // sull'originale, ma ora p *e'* l'originale - farle di nuovo
-            // avrebbe sommato la forza a se stessa, raddoppiandola.
+            
             calculateNetForceQuadtree(quadtree, &(*particles)[i], theta, f, dimSimulationArea, softening);
         }
         //Vengono aggiornate le posizioni delle particelle e resettate le forze
@@ -762,21 +734,7 @@ void parallelSimulation(int it, std::vector<Particle<Dimension>>* particles, int
     Particle<Dimension> *q;
     Particle<Dimension> *k;
     /*
-    Qui viene individuato il numero di thread da utilizzare per la sezione parallela, inoltre abbiamo definito che nella sezione parallela
-    avremo anche i seguenti elementi condivisi:
-    - particles: il vettore di particelle
-    - f: l'oggetto Force che calcola le forze tra le particelle 
-    - it: il numero di iterazioni
-    - delta_t: il passo temporale
-    - coordinateFiles: il vettore di file in cui scrivere le coordinate delle particelle
-    - softening: il fattore di ammorbidimento
-    - dim: la dimensione dell'area di simulazione
-    - num_threads: il numero di thread da utilizzare
-    - files: il vettore di file in cui scrivere le coordinate delle particelle
-    - num_particles: il numero di particelle
-    Inoltre, abbiamo definito le seguenti variabili private:
-    - force: il vettore di forze tra le particelle
-    - id_thread: l'id del thread corrente
+   
     
     */
 
@@ -952,7 +910,6 @@ void main3DSimulation(int forceType, int symType, double delta_t, int dimSimulat
                       int speedUp, int chunkSize) {
     time_t start, end;
     std::vector<Particle<Dimension>> particles;
-    // [RAII-FORCE] The wrapper owns the selected force and releases it automatically.
     std::unique_ptr<Force<Dimension>> f;
     size_t numFilesAndThreads;
     if (forceType == 1)
