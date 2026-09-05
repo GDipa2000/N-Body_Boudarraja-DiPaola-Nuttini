@@ -13,7 +13,6 @@ add_executable(nbody
     source/utils/fileUtilities.hpp
     source/utils/force.hpp
     source/utils/particle.hpp
-    source/utils/profiling.hpp
     source/utils/quadtreeNode.hpp
     source/utils/simulationUtilities.hpp
     source/utils/treeUtilities.hpp
