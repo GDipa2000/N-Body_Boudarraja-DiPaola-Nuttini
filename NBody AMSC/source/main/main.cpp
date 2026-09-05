@@ -26,15 +26,6 @@ bool outputEnabled() {
 }
 
 /**
- * @brief Merges a vector of QuadtreeNode roots into a single QuadtreeNode using
- * OpenMP tasks instead of a fork-join per merge level. The merge proceeds
- * recursively by quarters: each group of 4 subtrees is merged inside its own
- * task, and only the 4 sibling tasks of the same group are synchronized with
- * a local taskwait. Unlike the previous level-by-level barrier, a task that
- * finishes early (a sparser region of the domain) does not have to wait for
- * every other task of the same level before the next piece of work can start,
- * and the whole merge happens inside a single fork-join instead of one per level.
- *
  * @tparam Dimension Number of dimensions of the simulation
  * @param roots Vector of subtrees that need to be merged into a single tree (always has 4^n elements)
  * @param subRegionsDimension Width of a single base subregion (leaf-level subtree)
@@ -103,7 +94,6 @@ std::unique_ptr<QuadtreeNode<Dimension>> mergeRoots(std::array<std::unique_ptr<Q
     //il sottoalbero contiene un solo corpo, quindi lo inserisco nel quadtree come un normale corpo,
     //altrimenti il sottoalbero contiene più corpi, quindi il nodo intermedio deve essere inserito come nodo interno
     for (int j = 0; j < 4; j++) {
-        /
         // Va saltato prima di qualunque dereference, altrimenti crash.
         if (!(*roots)[j]) {
             continue;
@@ -151,7 +141,6 @@ std::unique_ptr<QuadtreeNode<Dimension>> mergeSubtreesRecursive(
         for (int j = 0; j < 4; ++j) {
             group[j] = std::move(roots[start + j]);
         }
-        /
         return mergeRoots(&group, std::ldexp(baseRegionWidth, levelsRemaining));
     }
 
@@ -318,7 +307,6 @@ void calculateNetForceQuadtree(const std::unique_ptr<QuadtreeNode<Dimension>>& n
         //qui calcolo la forza esercitata dalla particella contenuta della foglia sul corpo p e la aggiungo nella forza
         force_qk = f.calculateForce(*p, *node->getParticle());
         p->addForce(force_qk);
-        // [MAX-DEPTH] Evaluate particles retained in a saturated leaf individually.
         for (const auto& additionalParticle : node->getAdditionalParticles()) {
             if (additionalParticle->getId() != p->getId()) {
                 force_qk = f.calculateForce(*p, *additionalParticle);
@@ -326,7 +314,6 @@ void calculateNetForceQuadtree(const std::unique_ptr<QuadtreeNode<Dimension>>& n
             }
         }
     } else if (node->isLeaf()) {
-        // [MAX-DEPTH] A saturated leaf may contain only overflow particles.
         for (const auto& additionalParticle : node->getAdditionalParticles()) {
             if (additionalParticle->getId() != p->getId()) {
                 force_qk = f.calculateForce(*p, *additionalParticle);
@@ -338,7 +325,6 @@ void calculateNetForceQuadtree(const std::unique_ptr<QuadtreeNode<Dimension>>& n
         const Particle<Dimension> approxParticle = node->createApproximateParticle();// creo la particella approssimata del nodo corrente
         distanceSquared = p->squareDistance(approxParticle); //calcolo la distanza al quadrato dal centro di massa del nodo
         // se il gruppo è abbastanza lontano (quindi se s/d < θ), calcolo la forza esercitata dal nodo corrente sul corpo p e la aggiungo alla forza netta di p
-        // [SELF-FORCE] A node containing the target must always be opened.
         if (!node->contains(p->getPos()) && distanceSquared > 0 &&
             s * s < theta * theta * distanceSquared) {
             force_qk = f.calculateForce(*p, approxParticle);
@@ -555,7 +541,6 @@ void parallelBarnesHut(int iterationNumber, std::vector<Particle<Dimension>>* pa
     
     
     for (int iter = 0; iter < iterationNumber; ++iter) {
-        // [COLLISION-SYNC] Apply collisions before building the read-only tree.
         resolveBoundaryCollisions(*particles, dimSimulationArea);
         resolveCollisions(*particles, softening);
         start = time(NULL);
@@ -569,10 +554,6 @@ void parallelBarnesHut(int iterationNumber, std::vector<Particle<Dimension>>* pa
             // Calcolo delle forze per ogni particella localmente 
             #pragma omp for schedule(static, numParticles / num_threads)
             for (std::size_t i = 0; i < numParticles; ++i) {
-                // @change: stesso fix di serialBarnesHut. Ogni thread e' garantito
-                // scrivere solo sulle particelle che schedule(static,...) gli ha
-                // assegnato in questo omp for: nessuna race condition, nessuna
-                // copia, nessun trasferimento post-chiamata necessario.
                 calculateNetForceQuadtree(quadtree, &(*particles)[i], theta, f, dimSimulationArea, softening);
             }
             // Aggiornamento delle posizioni delle particelle globalmente e reset delle forze locali
@@ -833,7 +814,6 @@ void main2DSimulation(int forceType, int simType, double delta_t, int dimSimulat
     time_t start, end;
     std::vector<Particle<Dimension>> particles;
     size_t numFilesAndThreads;
-    // [RAII-FORCE] The wrapper owns the selected force and releases it automatically.
     std::unique_ptr<Force<Dimension>> f;
     if (forceType == 1)
         f = std::make_unique<CoulombForce<Dimension>>();
